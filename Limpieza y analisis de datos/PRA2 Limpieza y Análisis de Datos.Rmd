@@ -1,0 +1,552 @@
+---
+title: 'Práctica 2: Limpieza y análisis de datos'
+author: "Diego Labastida"
+date: "Junio 2022"
+output:
+  pdf_document:
+    highlight: zenburn
+    toc: yes
+  word_document: default
+  html_document:
+    highlight: default
+    number_sections: yes
+    theme: cosmo
+    toc: yes
+    toc_depth: 2
+    includes:
+      in_header: PEC-header.html
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Descripción del Dataset
+
+Instalamos y cargamos la librería dplry y ggplot2
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# https://cran.r-project.org/web/packages/ggplot2/index.html
+if (!require('ggplot2')) install.packages('ggplot2'); library('ggplot2')
+if (!require('gridExtra')) install.packages('gridExtra'); library('gridExtra')
+# https://cran.r-project.org/web/packages/dplyr/index.html
+if (!require('dplyr')) install.packages('dplyr'); library('dplyr')
+###REALIZA 5 PRUEBAS DE NORMALIDAD###
+if (!require('normtest')) install.packages('normtest'); library('normtest')
+###REALIZA 10 PRUEBAS DE NORMALIDAD###
+if (!require('nortest')) install.packages('nortest'); library('nortest')
+###REALIZA 1 PRUEBA DE NORMALIDAD###
+if (!require('moments')) install.packages('moments'); library('moments')
+
+if (!require('car')) install.packages('car'); library('car')
+
+if (!require('corrplot')) install.packages('corrplot'); library('corrplot')
+
+if (!require('kableExtra')) install.packages('kableExtra'); library('kableExtra')
+```
+
+A continuación, se describira el juego de datos que se utilizara en sta práctica. El objetivo de este dataset sera resolver preguntas relacionadas con los grupos de sobrevivientes como:
+
+- ¿Cuales fueron los grupos que sobrevivieron al evento en el titanic?
+- ¿La clase del boleto tuvo que ver en la supervivencia?
+- ¿Que edad tenian los pasajeros del Titanic?
+- ¿Los sobrevivientes del Titanic viajaban solos o acompañados?
+- ¿La primera clase tuvo privilegios al sobrevivir?
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+genderSubmission <- read.csv('gender_submission.csv',stringsAsFactors = FALSE, sep = ',')
+test <- read.csv('test.csv',stringsAsFactors = FALSE, sep = ',')
+train <- read.csv('train.csv',stringsAsFactors = FALSE, sep = ',')
+```
+
+891 Registros y 12 variables correspondiente a la información del archivo train con información de pasajeros en el Titanic.
+Los archivos test y gender_submission se complementan y deben unirse posteriortente para obetener 418 Registros con 12 variables.
+
+Finalmente se obtendra un dataset de 1309 Registros y 12 variables.
+
+- **PassengerId: (integer)**
+    Id unico para cada pasajero del Titanic
+    
+- **Survived: (integer)**
+    Indica si el pasajero sobrevivio o no (1=sobrevivio, 0=No sobrevivio)
+    
+- **Pclass: (integer)**
+    Clase del ticket de los pasajeros 1er, 2da y 3ra clase.
+
+- **Name: (character)**
+    Nombre del Pasajero
+
+- **Sex: (character)**
+    Genero del pasajero (Male / Female) Hombre o Mujer
+
+- **Age: (numeric)**
+    Edad del pasajero
+    
+- **SibSp: (integer)**
+    Numero de hermanos a bordo del Titanic
+
+- **Parch: (integer)**
+    Numero de padres abordo del Titanic
+
+- **Ticket: (character)**
+    Numero de tiquete del pasajero
+
+- **Fare: (numeric)**
+    Tarifa del tiquete
+
+- **Cabin: (character)**
+    Numero de cabina
+
+- **Embarked: (character)**
+    Puerto de Embarque
+
+# Integración y Selección de los datos
+
+Primero realizaremos una integración de los datos obtenidos en los 3 archivos.
+
+De acuerdo a la variable PassengerId de los juegos de datos **_genderSubmission_** complementamos el dataset **_test_**
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+test1 <- merge(test, genderSubmission)
+test1 <- test1[order(test1$PassengerId), ]
+```
+
+Posteriormente unimos los juegos de datos **_train_** y **_test_**
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+dataset <- rbind(train,test1)
+filas=dim(dataset)[1]
+str(dataset)
+```
+
+# Limpieza de los Datos
+
+Obtenemos una estadistica de valores vacios y NAs de cada columna
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+colSums(is.na(dataset))
+colSums(dataset=="")
+```
+
+Se observan lo siguiente:
+
+- 263 Registros NA en la variable **Age**
+- 1 Registro NA para **Fare**
+- 1014 Registros vacios para la variable **Cabin**
+- 2 Registros vacios para la variable **Embarked**
+
+Asignamos la media para valores vacíos de la variable **Age**.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+dataset$Age[is.na(dataset$Age)] <- mean(dataset$Age,na.rm=T)
+```
+
+Para el caso de la variable **Fare** la media se debe realizar de acuerdo a la case del ticket, sabiendo que los boletos de cada clase tienen una tarifa completamente distinta por los beneficios que estos pueden tener.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+mean(dataset$Fare[dataset$Pclass == dataset$Pclass[is.na(dataset$Fare)]],na.rm=T)
+dataset$Fare[is.na(dataset$Fare)] <- mean(dataset$Fare[dataset$Pclass == dataset$Pclass[is.na(dataset$Fare)]],na.rm=T)
+```
+
+Asignamos valor "Desconocido" para los valores vacíos de la variable **Cabin**.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+dataset$Cabin[dataset$Cabin == ''] <- "Desconocido"
+```
+
+Asignamos valor "D" de desconocido para los valores vacíos de la variable **Embarked**.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+dataset$Embarked[dataset$Embarked == ''] <- "D"
+```
+
+Modificamos la variable **Survived** (integer) por una variable Categorica 0=False y 1=True
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+dataset$Survived[dataset$Survived == 0] <- 'False'
+dataset$Survived[dataset$Survived == 1] <- 'True'
+dataset$Survived <- as.factor(dataset$Survived)
+dataset$Pclass <- as.factor(dataset$Pclass)
+```
+
+Convertimos la variable**Age** a Integer. Para los valores inferiores a uno se igualaran a la unidad.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+dataset$Age[dataset$Age < 1 & dataset$Age > 0] <- 1
+dataset$Age <- as.integer(dataset$Age)
+```
+
+Finalmente hacemos una discretización de las edades de los pasajeros.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+dataset["AgeGroup"] <- cut(dataset$Age, breaks = c(0,20,40,60,80,100), labels = c("0-19", "20-39", "40-59", "60-79","80-99"))
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, fig.width=6, fig.height=3, fig.align="center"}
+plot(dataset$AgeGroup,main="Número de pasajeros por grupos de edad",xlab="Edad", ylab="Cantidad",col = "ivory")
+```
+
+Hacemos la construcción de una variable nueva: **Family**
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, fig.width=6, fig.height=3, fig.align="center"}
+dataset$Family <- dataset$SibSp + dataset$Parch +1;
+dataset1<-dataset[1:filas,]
+ggplot(data = dataset1[!is.na(dataset[1:filas,]$Family),],aes(x=Family,fill=Survived))+geom_histogram(binwidth =1,position="fill")+ylab("Frecuencia")+ggtitle("Sobrevivir en función del número de familiares a bordo")
+```
+
+## Outliner Fare
+
+Haremos una evaluación de valores atípicos o posibles outliners. La variable **Fare** sera evaluada en su totalidad y posteriormente evaluaremos por la clase del ticket **Pclass**.
+
+Se gráfica todos los valores de la variable **_Fare_**
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, fig.width=4, fig.height=4, fig.align="center"}
+boxplot(dataset$Fare,main="Box plot", col="gray")
+unique(boxplot.stats(dataset$Fare)$out)
+```
+
+Obtenemos 3 conjuntos de datos con la información de cada clase de Ticket.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+firstClass <- dataset[dataset$Pclass == 1, ]
+secondClass <- dataset[dataset$Pclass == 2, ]
+thirdClass <- dataset[dataset$Pclass == 3, ]
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, fig.width=4, fig.height=4, fig.align="center"}
+ggplot(data = dataset, aes(x = Pclass, y = Fare, colour = Pclass)) +
+  geom_boxplot() +
+  geom_point() +
+  theme_bw() +
+  theme(legend.position = "none")
+```
+
+En el primer grafica identificamos 48 posibles outliners pero se considerara evaluar por clase y de esta forma seleccionar los mejores candidatos a ser eliminados.
+
+El segundo gráfico nos muestra la distribución de los outliners para cada Clase.
+
+Se obtienen los valores de la variable **Fare** para la Primera Clase
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+unique(boxplot.stats(firstClass$Fare)$out)
+```
+En Primera Clase observamos 5 Outliners como calculo incial se tomaran todos los valores fuera de la caja como outliners y se sustituiran con la media de los datos.
+
+Se obtienen los valores de la variable **Fare** para la Segunda Clase
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+unique(boxplot.stats(secondClass$Fare)$out)
+```
+En la segunda Clase se observa solo 2 valores fuera de la caja, si observamos con atención estan a una distancia considerable por este motivo consideramos ambos valores como Ouliners.
+
+Se obtienen los valores de la variable **Fare** para la Tercera Clase
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+unique(boxplot.stats(thirdClass$Fare)$out)
+```
+La gráfica para la tercera clase tiene 9 valores candidatos de valores atipicos en este caso se debe mencionar que no todos las tarifas pueden estar erroneas ya que como sabemos las tarifas varian dependiendo del día de su compra, lugar de compra y lugar de abordaje En este caso se hace una selección inicial y de acuerdo a los resultados obtenidos despues de este estudio se pueden modificar para mejorar el resultado final.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+dataset[dataset$Pclass == 1 & dataset$Fare > 225, ]$Fare <- mean(dataset[dataset$Pclass == 1, ]$Fare)
+dataset[dataset$Pclass == 2 & dataset$Fare > 50, ]$Fare <- mean(dataset[dataset$Pclass == 2, ]$Fare)
+dataset[dataset$Pclass == 3 & dataset$Fare > 27.5, ]$Fare <- mean(dataset[dataset$Pclass == 3, ]$Fare)
+```
+
+## Outliners Age
+
+Posteriormente, Se obtenemos los valores de la variable **Age** para identificar si existen valores Outliners
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+unique(boxplot.stats(dataset$Age)$out)
+```
+
+En el caso de la edad podemos obserbar valores fuera de la caja pero no son necesariamente valores atipicos ya que un humano puede tener desde 1 año hasta mas de 80 años de edad por lo que no podemos considerar que estos valores sean atipicos.
+
+# Análisis de los datos.
+
+## Comprobación de la Normalidad
+
+Nos proponemos analizar las relaciones entre las diferentes variables del juego de datos para ver si se relacionan y como.
+
+Veamos ahora dos gráficos que nos comparan los atributos Age y Survived.
+Observamos como el parámetro position="fill" nos da la proporción acumulada de un atributo dentro de otro
+
+**Hipótesis**
+
+- **H0:** La muestra proviene de una distribución normal.
+- **H1:** La muestra no proviene de una distribución normal.
+
+Se realiza la prueba de Shapiro-Wilk para la variable **Age** de todo el dataset y por grupos de genero por la variable **Sex**
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, fig.width=5, fig.height=3, fig.align="center"}
+shapiro.test(dataset$Age)
+```
+
+La evidencia de acuerdo al p-valor nos dice que podemos rechazar la hipotesis 0. Por lo tanto **La muestra no proviene de una distribución normal**
+
+Se obtiene un subconjuto de datos apartir de la variable **Sex = male**
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, fig.width=5, fig.height=3, fig.align="center"}
+male<-subset(dataset,Sex=="male")
+hist(male$Age)
+shapiro.test(male$Age)
+```
+
+La evidencia de acuerdo al p-valor nos dice que podemos rechazar la hipotesis 0. Por lo tanto **La muestra no proviene de una distribución normal**
+
+Se obtiene un subconjuto de datos apartir de la variable **Sex = female**
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, fig.width=5, fig.height=3, fig.align="center"}
+female<-subset(dataset,Sex=="female")
+hist(female$Age)
+shapiro.test(female$Age)
+```
+
+La evidencia de acuerdo al p-valor nos dice que podemos rechazar la hipotesis 0. Por lo tanto **La muestra no proviene de una distribución normal**
+
+Realizamos pruebas de Normalidad para la variable **Fare**, similar a la variable **Age** hacemos pruebas para la totalidad del dataset y por subgrupos de clase
+
+**Hipótesis**
+
+- **H0:** La muestra proviene de una distribución normal.
+- **H1:** La muestra no proviene de una distribución normal.
+
+Realizamos la prueba de Shapiro-Wilk para la totalidad del dataset con la variable **Fare**
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, fig.width=5, fig.height=3, fig.align="center"}
+shapiro.test(dataset$Fare)
+```
+
+La evidencia de acuerdo al p-valor nos dice que podemos rechazar la hipotesis 0. Por lo tanto **La muestra no proviene de una distribución normal**
+
+Realizamos la prueba de Shapiro-Wilk para el subconjunto de datos para Primera Clase
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, fig.width=5, fig.height=3, fig.align="center"}
+hist(firstClass$Fare)
+shapiro.test(firstClass$Fare)
+```
+
+La evidencia de acuerdo al p-valor nos dice que podemos rechazar la hipotesis 0. Por lo tanto **La muestra no proviene de una distribución normal**
+
+Realizamos la prueba de Shapiro-Wilk para el subconjunto de datos para Segunda Clase
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, fig.width=5, fig.height=3, fig.align="center"}
+hist(secondClass$Fare)
+shapiro.test(secondClass$Fare)
+```
+
+La evidencia de acuerdo al p-valor nos dice que podemos rechazar la hipotesis 0. Por lo tanto **La muestra no proviene de una distribución normal**
+
+Realizamos la prueba de Shapiro-Wilk para el subconjunto de datos para Tercera Clase
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, fig.width=5, fig.height=3, fig.align="center"}
+hist(thirdClass$Fare)
+shapiro.test(thirdClass$Fare)
+```
+
+## Homogeneidad de la varianza
+
+**Hipótesis**
+
+- **H0:** Las varianzas son homogeneas
+- **H1:** Las varianzas no son homogeneas
+
+Ya que conocemos que las datos no son normales usaremos: _Test de Leven_ y _Fligner-Killen_.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+fligner.test(Fare ~ Sex, dataset)
+```
+
+La evidencia de acuerdo al p-valor nos dice que podemos rechazar la hipotesis 0. Por lo tanto **Las varianzas no son homogeneas**
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+fligner.test(Age ~ Sex, dataset)
+```
+
+La evidencia de acuerdo al p-valor nos dice que podemos rechazar la hipotesis 0. Por lo tanto **Las varianzas no son homogeneas**
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+fligner.test(Family ~ Sex, dataset)
+```
+
+La evidencia de acuerdo al p-valor nos dice que podemos rechazar la hipotesis 0. Por lo tanto **Las varianzas no son homogeneas**
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+leveneTest(y = dataset$Family, group = dataset$Pclass, center = "median")
+```
+
+La evidencia de acuerdo al p-valor nos dice que no podemos rechazar la hipotesis nula. Por lo tanto **Las varianzas son homogeneas**
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+leveneTest(y = dataset$Fare, group = dataset$AgeGroup, center = "median")
+```
+
+La evidencia de acuerdo al p-valor nos dice que podemos rechazar la hipotesis 0. Por lo tanto **Las varianzas no son homogeneas**
+
+## Comprobación de Correlación de variables
+
+Ya que nuestros datos no siguen una distribución normal para las variables anteriores, se utilizara el coeficiente de correlación de **Spearman**
+
+**Hipótesis**
+
+- **H0:** La variables tienen una correlación.
+- **H1:** La variables no tienen una correlación.
+
+Vamos a probar si hay una correlación entre la edad del pasajero y el que pagó por el viaje
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, fig.width=5, fig.height=5, fig.align="center"}
+# https://cran.r-project.org/web/packages/tidyverse/index.html
+cor.test(x = dataset$Age, y = dataset$Fare, method = "spearman")
+plotCo1 <- ggplot(data = dataset, aes(x = Age, y = log(Fare))) + geom_point(color = "gray30") + geom_smooth(color = "firebrick") + theme_bw() +ggtitle("Correlación entre precio billete y edad")
+```
+
+Cómo podemos observar no parece haber correlación lineal entre la edad del pasajero y el precio del billete. El diagrama de dispersión tampoco apunta a ningún tipo de relación no lineal evidente.
+
+Vamos a probar si hay una correlación entre el que pagó por el viaje y el número en la familia
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, fig.width=5, fig.height=5, fig.align="center"}
+# https://cran.r-project.org/web/packages/tidyverse/index.html
+cor.test(x = dataset$Fare, y = dataset$Family, method = "spearman")
+plotCo2 <- ggplot(data = dataset, aes(x = log(Fare), y = Family)) + geom_point(color = "gray30") + geom_smooth(color = "firebrick") + theme_bw() +ggtitle("Correlación entre precio billete y No. de Familiares")
+
+grid.arrange(plotCo1, plotCo2)
+```
+
+Cómo podemos observar no parece haber correlación lineal entre el precio del billete y el número en la familia. El diagrama de dispersión tampoco apunta a ningún tipo de relación no lineal evidente.
+
+Correlación entre variables Categoricas
+
+**Hipótesis**
+
+- **H0:** No existe asociación entre las variables.
+- **H1:** Hay asociación entre las variables.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+attach(dataset) 
+chisq.test(table(Pclass,Survived))
+chisq.test(table(Sex,Survived))
+chisq.test(table(Age,Survived))
+chisq.test(table(Family,Survived))
+```
+
+Comprobando el valor de PiCuadrado podemos observar una correlación entre las variables anteriores en el siguiente orden, teniendo la mayor correlación la primer variable: Sex, Age, Family y Pclass
+
+## Pruebas de contraste de hipótesis
+
+**Hipótesis**
+
+¿La proporcuón de personas con 20-39 años es superior a las personas con 0-19 años?
+
+- **H0:** PA = PB
+- **H1:** PA > PB
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+x1 <- dataset[dataset$AgeGroup == '20-39', ] 
+x2 <- dataset[dataset$AgeGroup == '0-19', ] 
+n1 <- length( x1$Survived )
+n2 <- length( x2$Survived )
+p1 <- sum(x1$Survived == 'True')/n1;
+p2 <- sum(x2$Survived == 'True')/n2;
+success<-c( p1*n1, p2*n2)
+nn<-c(n1,n2)
+prop.test(success, nn, alternative="greater", correct=FALSE)
+```
+
+El valor p-valor es superior al numero alpha cayendo en la zona de aceptación de la hipótesis nula. De manera que la proporción de personas con edad de 20-39 años no es superior a las personas con 0-19 años de edad.
+
+A continuación se observa la distribución de sobrevivientes de acuerdo a las variables **Age**, **GroupAge** VS **Survived**
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, fig.width=5, fig.height=3, fig.align="center"}
+ggplot(data=dataset[1:filas,],aes(x=AgeGroup,
+          fill=Survived))+geom_bar()+ggtitle("Relación entre las variables AgeGroup y Survived")
+```
+
+**Hipótesis**
+
+¿Las personas con menos de 2 familiares sobrevivieron al Titanic?
+
+- **H0:** media = PB
+- **H1:** media < PB
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+ t.test( dataset$Family, alternative="less", mu=2)
+```
+
+El p-valor es inferior a nuestro numero alpha por lo que se rechaza la hipotesis nula (Ho). Por lo tanto, las personas con menos de 2 familiares sobrevivieron a el Titanic.
+
+Acontinuación se gráfica la relación entre las variables **SibSp** (# of siblings / supouses aboard the Titanic) y **Parch**(# of parents / children aboard the Titanic)
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, fig.width=5, fig.height=3, fig.align="center"}
+plot1 <- ggplot(data = dataset[1:filas,],aes(x=SibSp,fill=Survived))+geom_bar()+ggtitle("Sobrevivir en función de tener a bordo cónyuges y/o hermanos")
+plot2 <- ggplot(data = dataset[1:filas,],aes(x=Parch,fill=Survived))+geom_bar()+ggtitle("Sobrevivir en función de tener a bordo padres y/o hijos")
+grid.arrange(plot1, plot2)
+```
+
+Comprobamos que nuestro test de hipotesis esta en lo correcto ya que los sobrevienvtes con 1 o ningun familiara sobrevivieron en su mayoria.
+
+**Hipótesis**
+
+¿LA proporcion de pasajeros de 1ra Clase que sobrevivio es superior a un 50%?
+
+- **H0:** p = 0.5
+- **H1:** p > 0.5
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+prop.test(x=sum(dataset$Pclass == 1 & dataset$Survived == 'True'), n=sum(dataset$Pclass == 1), p=0.5, alternative="greater", correct=FALSE)
+```
+
+El p-valor es inferior a alpha por lo que se puede rechazar la hipotesis nula y podemos decir que la proporción de pasajeros en 1ra clase que se salvaron fue de mas del 50%.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, fig.width=8, fig.height=3, fig.align="center"}
+ggplot(data = dataset[1:filas,],aes(x=AgeGroup,fill=Survived))+geom_bar(position="fill")+facet_wrap(~Pclass)+ggtitle("Pasajeros por clase, puerto de origen y relación con survived")
+```
+
+**Hipótesis**
+
+¿La proporción de pasajeros de 1ra clase sobrevivientes es superior a los de 2da y 3ra clase?
+
+- **H0:** PA = PB+PC
+- **H1:** PA > PB+PC
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+x1 <- dataset[dataset$Pclass == 1, ] 
+x2 <- dataset[dataset$Pclass != 1, ] 
+n1 <- length( x1$Survived )
+n2 <- length( x2$Survived )
+p1 <- sum(x1$Survived == 'True')/n1;
+p2 <- sum(x2$Survived == 'True')/n2;
+success<-c( p1*n1, p2*n2)
+nn<-c(n1,n2)
+prop.test(success, nn, alternative="greater", correct=FALSE)
+```
+
+El p-valor es inferior a Alpha por lo que podemos rechaazar la hipotesis nula y podemos decir que la proporcion de sobrevivientes de pasajeros en 1ra Clase es superior a la proporción de sobrevivientes en clase 2da y 3ra.
+
+# Conclusiones
+
+Usando la Estadistica Inferencial podemos responder las preguntas iniciales que nos planteamos como objetivo a resolver.
+
+- ¿Cuales fueron los grupos que sobrevivieron al evento en el titanic?
+De acuerdo al estudio realizado los grupos con mayores posibilidades de supervivencia son principalmente el Sexo Femenino y los pasajeros con Boleto de 1era clase. Aunque es interesante decir que tambien el numero de Familiares es un indicador de mayor supervivencia, aunque para este estudio se evalua la presencia de hijos, hermanos o padres, es posible destacar que una persona que viajaba solo o en pareja tenia mayor probabilidad de sobrevivir.
+
+- ¿La clase del boleto tuvo que ver en la supervivencia?
+- ¿La primera clase tuvo privilegios al sobrevivir?
+Como se menciona anteriormente 1era clase tuvo mayores oportunidades de supervivencia a comparación de las otras Clases y eso lo pudimos notar en la prueba de hipotsis realiza al comparar las proporciones de sobrevivientes para ambos grupos.
+
+- ¿Que edad tenian los pasajeros del Titanic?
+En su mayoria eran pasajeros menores a 40 años, en este caso no se utiliza una Estadistica Inferencial pero si DEscriptiva al observar la distribución de edades.
+
+- ¿Los sobrevivientes del Titanic viajaban solos o acompañados?
+Los sobrevivientes del titanic en su mayoria eran personas sin familia en el titanic, aunque se puede destacar que nuestro dataset no habla de parejas casadas o novios, solo tenemos valores de familiares de sangre hijos, hermanos, padres.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+write.csv(dataset,"final_dataset.csv", row.names = FALSE)
+Cont <- c('Investigación Previa', 'Redacción de las respuestas', 'Desarrollo de Código')
+Int <- c('Diego Labastida', 'Diego Labastida', 'Diego Labastida')
+resultados <- data.frame(Cont, Int)
+names(resultados) <- c(" Contribuciones. ","Integrante")
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE,fig.align="center"}
+kable(resultados)
+```
